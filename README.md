@@ -1,4 +1,3 @@
-# walmart-sales-analysis
 Project Overview
 
 This project is an end-to-end data analysis solution designed to extract critical business insights from Walmart sales data. We utilize Python for data processing and analysis, SQL for advanced querying, and structured problem-solving techniques to solve key business questions. The project is ideal for data analysts looking to develop skills in data manipulation, SQL querying, and data pipeline creation.
@@ -85,3 +84,175 @@ Automation of the data pipeline for real-time data ingestion and analysis.
 Acknowledgments
 Data Source: Kaggle’s Walmart Sales Dataset
 Inspiration: Walmart’s business case studies on sales and supply chain optimization.
+
+MySQL queries for all business problems mentioned in the pdf 
+
+
+## SQL Business Problem Solutions
+
+### 1. Analyze Payment Methods and Sales
+
+This query groups the sales data by payment method to count the number of transactions and the total items sold via each payment type. By using `COUNT(*)` for transactions and `SUM(quantity)` for items, we see how often each payment method is used and the associated sales volume. This analysis reveals customer payment preferences and helps Walmart optimize payment processes.
+
+```sql
+SELECT payment_method, COUNT(*) AS transaction_count, SUM(quantity) AS items_sold
+FROM walmart_clean_data
+GROUP BY payment_method;
+```
+
+### 2. Identify the Highest-Rated Category in Each Branch
+
+This query computes the average customer rating of each product category per branch, then identifies the category with the highest average rating at each location. We first calculate `AVG(rating)` for each branch-category combination, then join with a subquery that finds the maximum average rating per branch. The result highlights the most highly-rated category at each branch, guiding targeted marketing and inventory decisions.
+
+```sql
+SELECT t.branch, t.category, t.avg_rating
+FROM (
+    SELECT branch, category, AVG(rating) AS avg_rating
+    FROM walmart_clean_data
+    GROUP BY branch, category
+) AS t
+JOIN (
+    SELECT branch, MAX(avg_rating) AS max_avg_rating
+    FROM (
+        SELECT branch, category, AVG(rating) AS avg_rating
+        FROM walmart_clean_data
+        GROUP BY branch, category
+    ) AS sub
+    GROUP BY branch
+) AS m
+ON t.branch = m.branch
+AND t.avg_rating = m.max_avg_rating;
+```
+
+### 3. Determine the Busiest Day for Each Branch
+
+This query finds the day of the week with the most transactions for each branch. We convert the `date` field to a weekday name using `DAYNAME(STR_TO_DATE(date, '%d/%m/%y'))` and count transactions for each branch-day combination. Then we select the day with the maximum count per branch. Identifying each branch’s busiest day helps optimize staffing and inventory management for peak demand periods.
+
+```sql
+SELECT d.branch, d.day_of_week, d.transaction_count
+FROM (
+    SELECT branch,
+           DAYNAME(STR_TO_DATE(date, '%d/%m/%y')) AS day_of_week,
+           COUNT(*) AS transaction_count
+    FROM walmart_clean_data
+    GROUP BY branch, day_of_week
+) AS d
+JOIN (
+    SELECT branch, MAX(transaction_count) AS max_count
+    FROM (
+        SELECT branch,
+               DAYNAME(STR_TO_DATE(date, '%d/%m/%y')) AS day_of_week,
+               COUNT(*) AS transaction_count
+        FROM walmart_clean_data
+        GROUP BY branch, day_of_week
+    ) AS t
+    GROUP BY branch
+) AS m
+ON d.branch = m.branch
+AND d.transaction_count = m.max_count;
+```
+
+### 4. Calculate Total Quantity Sold by Payment Method
+
+This query sums the total number of items sold for each payment method. By grouping on `payment_method` and applying `SUM(quantity)`, we get the total item volume transacted via each payment type. The result shows how sales volume is distributed across payment channels, which can inform sales and payment processing strategies.
+
+```sql
+SELECT payment_method, SUM(quantity) AS total_items_sold
+FROM walmart_clean_data
+GROUP BY payment_method;
+```
+
+### 5. Analyze Category Ratings by City
+
+This query computes the average, minimum, and maximum customer rating for each product category within each city. We group the data by `city` and `category` and use the aggregate functions `AVG(rating)`, `MIN(rating)`, and `MAX(rating)`. The results reveal how ratings vary by category and region, informing city-level promotions and product strategy to improve customer satisfaction.
+
+```sql
+SELECT city, category,
+       AVG(rating) AS avg_rating,
+       MIN(rating) AS min_rating,
+       MAX(rating) AS max_rating
+FROM walmart_clean_data
+GROUP BY city, category;
+```
+
+### 6. Calculate Total Profit by Category
+
+This query calculates total profit for each product category by using the `profit_margin` and `total` columns. We multiply `total * profit_margin` to get the profit for each transaction, then sum these values per category. The categories are ordered by the resulting profit in descending order, highlighting the most profitable product lines for Walmart to focus on expanding or repricing.
+
+```sql
+SELECT category, SUM(total * profit_margin) AS total_profit
+FROM walmart_clean_data
+GROUP BY category
+ORDER BY total_profit DESC;
+```
+
+### 7. Determine the Most Common Payment Method per Branch
+
+This query identifies the most frequently used payment method at each branch. We group the data by `branch` and `payment_method` and count the transactions for each. Then we join this result with a subquery that finds the maximum transaction count per branch. The final output lists, for each branch, the payment method used in the most transactions, showing branch-specific payment preferences.
+
+```sql
+SELECT t.branch, t.payment_method, t.usage_count
+FROM (
+    SELECT branch, payment_method, COUNT(*) AS usage_count
+    FROM walmart_clean_data
+    GROUP BY branch, payment_method
+) AS t
+JOIN (
+    SELECT branch, MAX(usage_count) AS max_count
+    FROM (
+        SELECT branch, payment_method, COUNT(*) AS usage_count
+        FROM walmart_clean_data
+        GROUP BY branch, payment_method
+    ) AS sub
+    GROUP BY branch
+) AS m
+ON t.branch = m.branch
+AND t.usage_count = m.max_count;
+```
+
+### 8. Analyze Sales Shifts Throughout the Day
+
+This query classifies each transaction into Morning, Afternoon, or Evening shifts based on its time and counts transactions in each shift. We use a `CASE` expression on the `time` column (converting it with `TIME(time)`) to assign a shift label, then count the transactions per shift. For example, transactions before noon are labeled 'Morning', noon to 4:59pm 'Afternoon', and the rest 'Evening'. Summing these counts reveals peak sales shifts to inform staffing and inventory planning.
+
+```sql
+SELECT shift, COUNT(*) AS transaction_count
+FROM (
+    SELECT CASE
+             WHEN TIME(`time`) >= '05:00:00' AND TIME(`time`) < '12:00:00' THEN 'Morning'
+             WHEN TIME(`time`) >= '12:00:00' AND TIME(`time`) < '17:00:00' THEN 'Afternoon'
+             ELSE 'Evening'
+           END AS shift
+    FROM walmart_clean_data
+) AS shifts
+GROUP BY shift;
+```
+
+### 9. Identify Branches with Highest Revenue Decline Year-Over-Year
+
+This query finds branches that had the largest drop in revenue compared to the previous year. We first calculate annual revenue per branch by summing `total` grouped by branch and year (`YEAR(STR_TO_DATE(date, '%d/%m/%y'))`). Then we self-join the yearly results on `branch` where the years differ by one to compute the revenue decline (`previous_year_revenue - current_year_revenue`). Sorting this difference in descending order highlights the branches with the steepest revenue declines, indicating where sales have fallen most sharply.
+
+```sql
+SELECT curr.branch,
+       prev.year AS previous_year,
+       curr.year AS current_year,
+       (prev.total_revenue - curr.total_revenue) AS revenue_decline
+FROM (
+    SELECT branch,
+           YEAR(STR_TO_DATE(date, '%d/%m/%y')) AS year,
+           SUM(total) AS total_revenue
+    FROM walmart_clean_data
+    GROUP BY branch, year
+) AS curr
+JOIN (
+    SELECT branch,
+           YEAR(STR_TO_DATE(date, '%d/%m/%y')) AS year,
+           SUM(total) AS total_revenue
+    FROM walmart_clean_data
+    GROUP BY branch, year
+) AS prev
+ON curr.branch = prev.branch
+AND curr.year = prev.year + 1
+ORDER BY revenue_decline DESC;
+```
+
+Each of these queries is written for MySQL and uses the column names from the cleaned dataset. They employ aggregation (`COUNT`, `SUM`, `AVG`, `MIN`, `MAX`), grouping, and date/time functions (`STR_TO_DATE`, `DAYNAME`, `TIME`) as needed to answer the business questions. Together, these queries can be run against the loaded Walmart sales table (`walmart_clean_data`) to extract actionable insights for Walmart’s management.
